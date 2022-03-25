@@ -1,0 +1,901 @@
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 1
+MYARCANO.asm
+
+
+
+      1	0000				     .model  tiny
+      2	0000				     .code
+      3					     org     100h
+      4
+      5	0100			     start:
+      6	0100  BA 0535r			     mov     dx, offset	 welcome_msg
+      7	0103  E8 0427			     call    print
+      8
+      9	0106  B4 00			     mov     ah, 00h		     ; wait for	key press
+     10	0108  CD 16			     int     16h
+     11
+     12	010A  B8 0003			     mov     ax, 0003h
+     13	010D  CD 10			     int     10h
+     14				     ;;;; hide text cursor:;;;
+     15	010F  B4 01			     mov     ah, 1
+     16	0111  B5 2B			     mov     ch, 2bh
+     17	0113  B1 0B			     mov     cl, 0bh
+     18	0115  CD 10			     int     10h
+     19				     ;;;;;;;;;;;;;;;;;;;;;;;;
+     20	0117  E8 02EA			     call    gen_ball
+     21	011A  E8 0320			     call    gen_field
+     22	011D  E8 00FF			     call    print_ball
+     23	0120  E8 03C1			     call    print_field
+     24	0123  E8 00B4			     call    print_platform
+     25	0126  E8 0119			     call    print_walls
+     26	0129			     game_loop:
+     27	0129  80 3E 061Br 01		     cmp     next_gen, 1
+     28	012E  75 07			     jne     elements_exist
+     29	0130  FE 0E 061Br		     dec     next_gen
+     30	0134  E8 0306			     call    gen_field
+     31	0137			     elements_exist:
+     32					     ;call    print_field
+     33	0137  E8 0036			     call    read_character
+     34									     ; wait some time
+     35	013A  B4 00			     mov     ah, 00h
+     36	013C  CD 1A			     int     1ah
+     37	013E  3B 16 0618r		     cmp     dx, wait_time
+     38	0142  72 F3			     jb	     elements_exist
+     39	0144  83 C2 02			     add     dx, 2
+     40	0147  89 16 0618r		     mov     wait_time,	dx
+     41
+     42	014B  E8 016A			     call    move_ball
+     43	014E  E8 0186			     call    lose_check
+     44	0151  80 3E 061Ar 01		     cmp     lose, 1
+     45	0156  74 08			     je	     game_over
+     46	0158  E8 01A2			     call    wall_check
+     47	015B  E8 01DD			     call    brick_check
+     48	015E  EB C9			     jmp     game_loop
+     49	0160			     game_over:
+     50	0160  E8 0281			     call    stop_game
+     51	0163  BA 05F0r			     mov     dx, offset	lose_msg
+     52	0166  E8 03C4			     call    print
+     53	0169  BA 0596r			     mov     dx, offset	end_msg
+     54	016C  E8 03BE			     call    print
+     55	016F  C3			     ret
+     56				     ; --- procedures --- ;
+     57
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 2
+MYARCANO.asm
+
+
+
+     58	0170			     read_character proc
+     59	0170  50			     push    ax
+     60	0171  52			     push    dx
+     61	0172  B8 0100			     mov     ax, 0100h
+     62	0175  CD 16			     int     16h
+     63	0177  74 40			     jz	     end_read
+     64
+     65	0179  32 E4			     xor     ah, ah
+     66	017B  CD 16			     int     16h
+     67	017D  3C 1B			     cmp     al, 1bh		     ; ESC
+     68	017F  75 0E			     jne     other_key_press
+     69
+     70	0181  E8 0260			     call    stop_game
+     71	0184  BA 0596r			     mov     dx, offset	end_msg
+     72	0187  E8 03A3			     call    print
+     73	018A  CD 20			     int     20h
+     74	018C  EB 2B 90			     jmp     end_read
+     75	018F			     other_key_press:
+     76	018F  80 FC 4B			     cmp     ah, 4bh		     ; left
+     77	0192  75 11			     jne     no_left_press
+     78	0194  80 3E 0615r 00		     cmp     platform_x, 0
+     79	0199  74 1E			     je	     end_read
+     80	019B  FE 0E 0615r		     dec     platform_x
+     81	019F  E8 0038			     call    print_platform
+     82	01A2  EB 15 90			     jmp     end_read
+     83	01A5			     no_left_press:
+     84	01A5  80 FC 4D			     cmp     ah, 4dh		     ; right
+     85	01A8  75 0F			     jne     end_read		     ; if no right then	end
+     86	01AA  80 3E 0615r 46 90		     cmp     platform_x, 80 - platform_len
+     87	01B0  74 07			     je	     end_read
+     88	01B2  FE 06 0615r		     inc     platform_x
+     89	01B6  E8 0021			     call    print_platform
+     90	01B9			     end_read:
+     91	01B9  5A			     pop     dx
+     92	01BA  58			     pop     ax
+     93	01BB  C3			     ret
+     94	01BC			     read_character endp
+     95
+     96	01BC			     clean_platform_line proc
+     97	01BC  50			     push    ax
+     98	01BD  53			     push    bx
+     99	01BE  51			     push    cx
+    100	01BF  52			     push    dx
+    101
+    102	01C0  B4 02			     mov     ah, 02h
+    103	01C2  32 FF			     xor     bh, bh
+    104	01C4  B6 18			     mov     dh, 24
+    105	01C6  32 D2			     xor     dl, dl
+    106	01C8  CD 10			     int     10h
+    107
+    108	01CA  B4 09			     mov     ah, 09h
+    109	01CC  B0 20			     mov     al, ' '
+    110	01CE  32 DB			     xor     bl, bl
+    111	01D0  B9 0050			     mov     cx, 80
+    112	01D3  CD 10			     int     10h
+    113
+    114	01D5  5A			     pop     dx
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 3
+MYARCANO.asm
+
+
+
+    115	01D6  59			     pop     cx
+    116	01D7  5B			     pop     bx
+    117	01D8  58			     pop     ax
+    118	01D9  C3			     ret
+    119	01DA			     clean_platform_line endp
+    120
+    121	01DA			     print_platform proc
+    122	01DA  50			     push    ax
+    123	01DB  53			     push    bx
+    124	01DC  52			     push    dx
+    125	01DD  51			     push    cx
+    126
+    127	01DE  E8 FFDB			     call    clean_platform_line
+    128
+    129	01E1  B4 02			     mov     ah, 02h
+    130	01E3  B6 18			     mov     dh, 24
+    131	01E5  8A 16 0615r		     mov     dl, platform_x
+    132	01E9  CD 10			     int     10h
+    133
+    134	01EB  B4 09			     mov     ah, 09h
+    135	01ED  B0 DC			     mov     al, 0dch
+    136	01EF  B9 000A 90		     mov     cx, platform_len
+    137	01F3  B3 0E			     mov     bl, 0eh
+    138	01F5  CD 10			     int     10h
+    139
+    140	01F7  59			     pop     cx
+    141	01F8  5A			     pop     dx
+    142	01F9  5B			     pop     bx
+    143	01FA  58			     pop     ax
+    144	01FB  C3			     ret
+    145	01FC			     print_platform endp
+    146
+    147	01FC			     clean_ball	proc
+    148	01FC  50			     push    ax
+    149	01FD  52			     push    dx
+    150	01FE  53			     push    bx
+    151	01FF  51			     push    cx
+    152
+    153	0200  B8 0200			     mov     ax, 0200h
+    154	0203  32 FF			     xor     bh, bh
+    155	0205  8A 36 091Dr		     mov     dh, myball.y
+    156	0209  8A 16 091Cr		     mov     dl, myball.x
+    157	020D  CD 10			     int     10h
+    158
+    159	020F  B4 09			     mov     ah, 09h
+    160	0211  B0 20			     mov     al, ' '
+    161	0213  32 DB			     xor     bl, bl
+    162	0215  B9 0001			     mov     cx, 1
+    163	0218  CD 10			     int     10h
+    164
+    165	021A  59			     pop     cx
+    166	021B  5B			     pop     bx
+    167	021C  5A			     pop     dx
+    168	021D  58			     pop     ax
+    169	021E  C3			     ret
+    170	021F			     clean_ball	endp
+    171
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 4
+MYARCANO.asm
+
+
+
+    172	021F			     print_ball	proc
+    173	021F  50			     push    ax
+    174	0220  52			     push    dx
+    175	0221  53			     push    bx
+    176	0222  51			     push    cx
+    177
+    178	0223  B8 0200			     mov     ax, 0200h
+    179	0226  32 FF			     xor     bh, bh
+    180	0228  8A 36 091Dr		     mov     dh, myball.y
+    181	022C  8A 16 091Cr		     mov     dl, myball.x
+    182	0230  CD 10			     int     10h
+    183
+    184	0232  B4 09			     mov     ah, 09h
+    185	0234  B0 FE			     mov     al, 0feh
+    186	0236  B3 0B			     mov     bl, 0bh
+    187	0238  B9 0001			     mov     cx, 1
+    188	023B  CD 10			     int     10h
+    189
+    190	023D  59			     pop     cx
+    191	023E  5B			     pop     bx
+    192	023F  5A			     pop     dx
+    193	0240  58			     pop     ax
+    194	0241  C3			     ret
+    195	0242			     print_ball	endp
+    196
+    197	0242			     print_walls proc
+    198	0242  50			     push    ax
+    199	0243  53			     push    bx
+    200	0244  52			     push    dx
+    201	0245  51			     push    cx
+    202
+    203	0246  B4 02			     mov     ah, 2
+    204	0248  BA 0001			     mov     dx, 1h
+    205	024B  33 DB			     xor     bx, bx
+    206	024D  CD 10			     int     10h
+    207
+    208	024F  B4 09			     mov     ah, 09h
+    209	0251  B0 C4			     mov     al, 0c4h
+    210	0253  B3 07			     mov     bl, 07h
+    211	0255  B9 004E			     mov     cx, 78
+    212	0258  CD 10			     int     10h
+    213
+    214	025A  B9 0017			     mov     cx, 23
+    215	025D			     wall_loop:
+    216	025D  51			     push    cx
+    217	025E  B4 02			     mov     ah, 2
+    218	0260  8A F1			     mov     dh, cl
+    219	0262  32 D2			     xor     dl, dl
+    220	0264  33 DB			     xor     bx, bx
+    221	0266  CD 10			     int     10h
+    222
+    223	0268  B4 09			     mov     ah, 09h
+    224	026A  B0 B3			     mov     al, 0b3h
+    225	026C  B3 07			     mov     bl, 07h
+    226	026E  B9 0001			     mov     cx, 1
+    227	0271  CD 10			     int     10h
+    228
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 5
+MYARCANO.asm
+
+
+
+    229	0273  59			     pop     cx
+    230	0274  51			     push    cx
+    231	0275  B4 02			     mov     ah, 2
+    232	0277  8A F1			     mov     dh, cl
+    233	0279  B2 4F			     mov     dl, 79
+    234	027B  33 DB			     xor     bx, bx
+    235	027D  CD 10			     int     10h
+    236
+    237	027F  B4 09			     mov     ah, 09h
+    238	0281  B0 B3			     mov     al, 0b3h
+    239	0283  B3 07			     mov     bl, 07h
+    240	0285  B9 0001			     mov     cx, 1
+    241	0288  CD 10			     int     10h
+    242	028A  59			     pop     cx
+    243	028B  E2 D0			     loop    wall_loop
+    244
+    245	028D  B4 02			     mov     ah, 2
+    246	028F  33 D2			     xor     dx, dx
+    247	0291  33 DB			     xor     bx, bx
+    248	0293  CD 10			     int     10h
+    249
+    250	0295  B4 09			     mov     ah, 09h
+    251	0297  B0 DA			     mov     al, 0dah
+    252	0299  B3 07			     mov     bl, 07h
+    253	029B  B9 0001			     mov     cx, 1
+    254	029E  CD 10			     int     10h
+    255
+    256	02A0  B4 02			     mov     ah, 2
+    257	02A2  B2 4F			     mov     dl, 79
+    258	02A4  33 DB			     xor     bx, bx
+    259	02A6  CD 10			     int     10h
+    260
+    261	02A8  B4 09			     mov     ah, 09h
+    262	02AA  B0 BF			     mov     al, 0bfh
+    263	02AC  B3 07			     mov     bl, 07h
+    264	02AE  B9 0001			     mov     cx, 1
+    265	02B1  CD 10			     int     10h
+    266
+    267	02B3  59			     pop     cx
+    268	02B4  5A			     pop     dx
+    269	02B5  5B			     pop     bx
+    270	02B6  58			     pop     ax
+    271	02B7  C3			     ret
+    272	02B8			     print_walls endp
+    273
+    274	02B8			     move_ball proc
+    275	02B8  E8 FF41			     call    clean_ball
+    276	02BB  E8 FF1C			     call    print_platform
+    277	02BE  E8 FF81			     call    print_walls
+    278				     ;
+    279	02C1  50			     push    ax
+    280	02C2  A0 091Fr			     mov     al, myball.angle
+    281	02C5  32 E4			     xor     ah, ah
+    282	02C7  00 06 091Dr		     add     myball.y, al
+    283	02CB  A0 091Er			     mov     al, myball.dir
+    284	02CE  00 06 091Cr		     add     myball.x, al
+    285	02D2  58			     pop     ax
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 6
+MYARCANO.asm
+
+
+
+    286
+    287	02D3  E8 FF49			     call    print_ball
+    288	02D6  C3			     ret
+    289	02D7			     move_ball endp
+    290
+    291	02D7			     lose_check	proc
+    292	02D7  50			     push    ax
+    293	02D8  80 3E 091Dr 18		     cmp     myball.y, 24
+    294	02DD  75 1C			     jne     end_lose_check
+    295	02DF  A0 0615r			     mov     al, platform_x
+    296	02E2  38 06 091Cr		     cmp     myball.x, al
+    297	02E6  7C 0A			     jl	     _lose
+    298	02E8			     right_check:
+    299	02E8  04 0A 90 90		     add     al, platform_len
+    300	02EC  38 06 091Cr		     cmp     myball.x, al
+    301	02F0  7E 09			     jle     end_lose_check
+    302	02F2			     _lose:
+    303	02F2  FE 06 061Ar		     inc     lose
+    304	02F6  E8 00EB			     call    stop_game
+    305	02F9  CD 10			     int     10h
+    306	02FB			     end_lose_check:
+    307	02FB  58			     pop     ax
+    308	02FC  C3			     ret
+    309	02FD			     lose_check	endp
+    310
+    311	02FD			     wall_check	proc
+    312	02FD  50			     push    ax
+    313	02FE  B4 62			     mov     ah, 'b'
+    314	0300  A0 091Cr			     mov     al, myball.x
+    315	0303  3C 00			     cmp     al, 0
+    316	0305  74 07			     je	     cont_b
+    317	0307  3C 4F			     cmp     al, 79
+    318	0309  74 03			     je	     cont_b
+    319	030B  EB 0C 90			     jmp     check_vert
+    320	030E			     cont_b:
+    321	030E  A0 091Dr			     mov     al, myball.y
+    322	0311  3C 00			     cmp     al, 0
+    323	0313  74 21			     je	     change_dir
+    324	0315  3C 18			     cmp     al, 24
+    325	0317  74 1D			     je	    change_dir
+    326	0319			     check_vert:
+    327	0319  B4 78			     mov     ah, 'x'  ;	to recognize, that it's	a vertial wall
+    328	031B  A0 091Cr			     mov     al, myball.x
+    329	031E  3C 00			     cmp     al, 0
+    330	0320  74 14			     je	     change_dir
+    331	0322  3C 4F			     cmp     al, 79
+    332	0324  74 10			     je	     change_dir
+    333
+    334	0326  B4 79			     mov     ah, 'y'  ;	to recognize that it's a horizontal wall
+    335	0328  A0 091Dr			     mov     al, myball.y
+    336	032B  3C 00			     cmp     al, 0
+    337	032D  74 07			     je	     change_dir
+    338	032F  3C 18			     cmp     al, 24
+    339	0331  74 03			     je	     change_dir
+    340	0333  EB 04 90			     jmp     end_wall_check
+    341	0336			     change_dir:
+    342	0336  E8 0074			     call    change_ball_dir
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 7
+MYARCANO.asm
+
+
+
+    343	0339			     end_wall_check:
+    344	0339  58			     pop     ax
+    345	033A  C3			     ret
+    346	033B			     wall_check	endp
+    347
+    348	033B			     brick_check     proc
+    349	033B  50			     push    ax
+    350	033C  53			     push    bx
+    351	033D  52			     push    dx
+    352
+    353	033E  80 3E 091Cr 07		     cmp     myball.x, 7     ; bricks
+    354	0343  7E 64			     jle     end_brick_check ; starts in 8
+    355	0345  80 3E 091Cr 49		     cmp     myball.x, 73    ; and
+    356	034A  7D 5D			     jge     end_brick_check ; ends in 71
+    357	034C  80 3E 091Dr 17		     cmp     myball.y, 23
+    358	0351  7D 56			     jge     end_brick_check
+    359				     ;;;;;;;; get y cooords of y ;;;;;;;;;;;;;;;
+    360	0353  A0 091Dr			     mov     al, myball.y
+    361	0356  32 E4			     xor     ah, ah
+    362	0358  D1 E0 D1 E0 D1 E0	D1+	     shl     ax, 4
+    363	      E0
+    364	0360  8B D8			     mov     bx, ax
+    365				     ;;;;;;;; get x cooooords of x ;;;;;;;;;;;;;;
+    366	0362  A0 091Cr			     mov     al, myball.x
+    367	0365  32 E4			     xor     ah, ah
+    368	0367  BA 0004			     mov     dx, 4
+    369	036A  F6 F2			     div     dl
+    370	036C  A0 091Cr			     mov     al, myball.x
+    371	036F  2A C4			     sub     al, ah
+    372	0371  32 E4			     xor     ah, ah
+    373	0373  2C 08			     sub     al, 8
+    374	0375  BA 0004			     mov     dx, 4
+    375	0378  F6 F2			     div     dl
+    376	037A  32 E4			     xor     ah, ah
+    377	037C  03 D8			     add     bx, ax
+    378	037E  D1 E3			     shl     bx, 1
+    379
+    380	0380  F7 87 061Cr 8000		     test    bricks[bx], 8000h
+    381	0386  75 21			     jnz     end_brick_check
+    382	0388  8B 87 061Cr		     mov     ax, bricks[bx]
+    383	038C  81 8F 061Cr 8000		     or	     bricks[bx], 8000h
+    384
+    385	0392  33 DB			     xor     bx, bx
+    386	0394  8A D4			     mov     dl, ah
+    387	0396  8A F0			     mov     dh, al
+    388	0398  B4 02			     mov     ah, 2h
+    389	039A  CD 10			     int     10h
+    390
+    391	039C  B8 0900			     mov     ax, 0900h
+    392	039F  B9 0004			     mov     cx, 4
+    393	03A2  B3 06			     mov     bl, 6
+    394	03A4  CD 10			     int     10h
+    395
+    396					     ;mov     ah, 'y'
+    397					     ;call    change_ball_dir
+    398	03A6  E8 013B			     call    print_field
+    399
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 8
+MYARCANO.asm
+
+
+
+    400					     ;call    check_bricks_exist
+    401	03A9			     end_brick_check:
+    402	03A9  5A			     pop     dx
+    403	03AA  5B			     pop     bx
+    404	03AB  58			     pop     ax
+    405	03AC  C3			     ret
+    406	03AD			     brick_check     endp
+    407
+    408
+    409	03AD			     change_ball_dir proc
+    410	03AD  51			     push    cx
+    411	03AE  32 ED			     xor     ch, ch
+    412	03B0  B1 FF			     mov     cl, -1
+    413	03B2  80 FC 62			     cmp     ah, 'b'
+    414	03B5  75 13			     jne     vert_wall
+    415	03B7  A0 091Er			     mov     al, myball.dir
+    416	03BA  F6 E9			     imul    cl
+    417	03BC  A2 091Er			     mov     myball.dir, al
+    418	03BF  A0 091Fr			     mov     al, myball.angle
+    419	03C2  F6 E9			     imul    cl
+    420	03C4  A2 091Fr			     mov     myball.angle, al
+    421	03C7  EB 19 90			     jmp     end_change_dir
+    422	03CA			     vert_wall:
+    423	03CA  80 FC 78			     cmp     ah, 'x'  ;	if ah =	x -> vertical wall
+    424	03CD  75 0B			     jne     hor_wall
+    425	03CF  A0 091Er			     mov     al, myball.dir
+    426	03D2  F6 E9			     imul    cl
+    427	03D4  A2 091Er			     mov     myball.dir, al
+    428	03D7  EB 09 90			     jmp     end_change_dir
+    429	03DA			     hor_wall:
+    430	03DA  A0 091Fr			     mov     al, myball.angle
+    431	03DD  F6 E9			     imul    cl
+    432	03DF  A2 091Fr			     mov     myball.angle, al
+    433	03E2			     end_change_dir:
+    434	03E2  59			     pop     cx
+    435	03E3  C3			     ret
+    436	03E4			     change_ball_dir endp
+    437
+    438	03E4			     stop_game proc
+    439	03E4  50			     push    ax
+    440	03E5  53			     push    bx
+    441	03E6  51			     push    cx
+    442	03E7  52			     push    dx
+    443
+    444	03E8  E8 FE11			     call    clean_ball
+    445	03EB  E8 FDCE			     call    clean_platform_line
+    446	03EE  B4 01			     mov     ah, 1
+    447	03F0  B5 0B			     mov     ch, 0bh
+    448	03F2  B1 0B			     mov     cl, 0bh
+    449	03F4  CD 10			     int     10h
+    450	03F6  B8 0003			     mov     ax, 0003h		       ; cursor	to the x:0, y:0
+    451	03F9  32 FF			     xor     bh, bh
+    452	03FB  33 D2			     xor     dx, dx
+    453	03FD  CD 10			     int     10h
+    454
+    455	03FF  5A			     pop     dx
+    456	0400  59			     pop     cx
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 9
+MYARCANO.asm
+
+
+
+    457	0401  5B			     pop     bx
+    458	0402  58			     pop     ax
+    459	0403  C3			     ret
+    460	0404			     stop_game endp
+    461
+    462
+    463	0404			     gen_ball	     proc
+    464	0404  50			     push    ax
+    465	0405  51			     push    cx
+    466	0406  52			     push    dx
+    467	0407			     _COORDS:
+    468	0407  32 E4			     xor     ah, ah
+    469	0409  CD 1A			     int     1ah
+    470	040B  8A C2			     mov     al, dl
+    471	040D  B1 07			     mov     cl, 7
+    472	040F  F6 F1			     div     cl
+    473	0411  04 02			     add     al, 2
+    474	0413  80 C4 04			     add     ah, 4
+    475	0416  A2 091Cr			     mov     myball.x, al
+    476	0419  88 26 091Dr		     mov     myball.y, ah
+    477	041D			     _ANGLE:
+    478	041D  B1 01			     mov     cl, 1
+    479	041F  F6 C2 01			     test    dl, 1
+    480	0422  74 02			     jz	     pos_angle
+    481	0424  B1 D3			     mov     cl, -45
+    482	0426			     pos_angle:
+    483	0426  88 0E 091Fr		     mov     myball.angle, cl
+    484	042A			     _DIR:
+    485	042A  B1 01			     mov     cl, 1
+    486	042C  F6 C2 04			     test    dl, 4
+    487	042F  74 04			     jz	     neg_die
+    488	0431  FE C9			     dec     cl
+    489	0433  FE C9			     dec     cl
+    490	0435			     neg_die:
+    491	0435  88 0E 091Er		     mov     myball.dir, cl
+    492	0439  5A			     pop     dx
+    493	043A  59			     pop     cx
+    494	043B  58			     pop     ax
+    495	043C  C3			     ret
+    496	043D			     gen_ball	     endp
+    497
+    498	043D			     gen_field	     proc
+    499	043D  51			     push    cx
+    500	043E  50			     push    ax
+    501	043F  E8 0023			     call offset_field
+    502	0442  B9 0010			     mov     cx, 16
+    503	0445			     gen_loop:
+    504	0445  51			     push    cx
+    505	0446  32 FF			     xor     bh, bh
+    506	0448  B3 10			     mov     bl, 16
+    507	044A  2A D9			     sub     bl, cl
+    508	044C  53			     push    bx
+    509	044D  D0 E3 D0 E3		     shl     bl, 2
+    510	0451  80 C3 08			     add     bl, 8
+    511	0454  B0 01			     mov     al, 1
+    512	0456  8A E3			     mov     ah, bl
+    513	0458  5B			     pop     bx
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 10
+MYARCANO.asm
+
+
+
+    514	0459  D1 E3			     shl     bx, 1
+    515	045B  89 87 061Cr		     mov     bricks[bx], ax
+    516	045F  59			     pop     cx
+    517	0460  E2 E3			     loop    gen_loop
+    518	0462  58			     pop     ax
+    519	0463  59			     pop     cx
+    520	0464  C3			     ret
+    521	0465			     gen_field	     endp
+    522
+    523	0465			     offset_field    proc
+    524	0465  50			     push    ax
+    525	0466  53			     push    bx
+    526	0467  51			     push    cx
+    527	0468  52			     push    dx
+    528
+    529	0469  B9 0015			     mov     cx, 21
+    530	046C			     offset_l1:
+    531	046C  51			 push	 cx
+    532	046D  8B C1			 mov ax, cx
+    533	046F  B9 0010			 mov cx, 16
+    534	0472			     offset_l2:
+    535	0472  50			 push	 ax
+    536	0473  51			 push	 cx
+    537
+    538	0474  8B D1			 mov dx, cx
+    539	0476  8B D8			 mov bx, ax
+    540	0478  4B			 dec bx
+    541	0479  53			 push	 bx
+    542	047A  D1 E3 D1 E3 D1 E3	D1+	 shl bx, 4
+    543	      E3
+    544	0482  B8 0010			 mov ax, 16
+    545	0485  2B C2			 sub ax, dx
+    546	0487  03 D8			 add bx, ax
+    547	0489  8B D0			 mov dx, ax
+    548	048B  D1 E3			 shl bx, 1
+    549	048D  8B 87 061Cr		 mov ax, bricks[bx]
+    550	0491  3D FFFF			 cmp ax, 0FFFFh
+    551	0494  74 02			 je  no_data
+    552	0496  FE C0			 inc al
+    553	0498			     no_data:
+    554	0498  5B			 pop bx
+    555	0499  43			 inc bx
+    556	049A  D1 E3 D1 E3 D1 E3	D1+	 shl bx, 4
+    557	      E3
+    558	04A2  03 DA			 add bx, dx
+    559	04A4  D1 E3			 shl bx, 1
+    560	04A6  89 87 061Cr		 mov bricks[bx], ax
+    561
+    562	04AA  59			 pop cx
+    563	04AB  58			 pop ax
+    564	04AC  E2 C4		     loop    offset_l2
+    565	04AE  59			 pop cx
+    566	04AF  E2 BB		     loop    offset_l1
+    567	04B1  5A			     pop     dx
+    568	04B2  59			     pop     cx
+    569	04B3  5B			     pop     bx
+    570	04B4  58			     pop     ax
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 11
+MYARCANO.asm
+
+
+
+    571	04B5  C3			     ret
+    572	04B6			     offset_field    endp
+    573
+    574	04B6			     check_bricks_exist	      proc
+    575	04B6  50			     push    ax
+    576	04B7  53			     push    bx
+    577	04B8  51			     push    cx
+    578	04B9  33 C0			     xor     ax, ax
+    579	04BB  B9 0180			     mov     cx, 384
+    580	04BE			     check_exist_loop:
+    581	04BE  3D 0004			     cmp     ax, 4
+    582	04C1  74 12			     je	     exit_exist_loop
+    583	04C3  BB 0180			     mov     bx, 384
+    584	04C6  2B D9			     sub     bx, cx
+    585	04C8  D1 E3			     shl     bx, 1
+    586	04CA  F7 87 061Cr 8000		     test    bricks[bx], 8000h
+    587	04D0  75 01			     jnz      cont_exist_loop
+    588	04D2  40			     inc     ax
+    589	04D3			     cont_exist_loop:
+    590	04D3  E2 E9			     loop check_exist_loop
+    591	04D5			     exit_exist_loop:
+    592	04D5  3D 0004			     cmp     ax, 4
+    593	04D8  7D 06			     jge     no_need_bricks
+    594	04DA  C6 06 061Br 01 90		     mov     next_gen, 1
+    595	04E0			     no_need_bricks:
+    596	04E0  59			     pop     cx
+    597	04E1  5B			     pop     bx
+    598	04E2  58			     pop     ax
+    599	04E3  C3			     ret
+    600	04E4			     check_bricks_exist	      endp
+    601
+    602	04E4			     print_field     proc
+    603	04E4  50			     push    ax
+    604	04E5  51			     push    cx
+    605	04E6  53			     push    bx
+    606	04E7  52			     push    dx
+    607
+    608	04E8  B9 0017			     mov     cx, 23
+    609	04EB  D1 E1 D1 E1 D1 E1	D1+	     shl     cx, 4
+    610	      E1
+    611	04F3  8B D9			     mov     bx, cx
+    612	04F5			     print_field_loop:
+    613	04F5  51			     push    cx
+    614	04F6  53			     push    bx
+    615	04F7  2B D9			     sub     bx, cx
+    616	04F9  D1 E3			     shl     bx, 1
+    617	04FB  8B 87 061Cr		     mov     ax, bricks[bx]
+    618	04FF  3D FFFF			     cmp     ax, 0FFFFh
+    619	0502  74 20			     je	     no_brick
+    620	0504  B9 09B1			     mov     cx, 09b1h
+    621	0507  51			     push    cx
+    622	0508  A9 8000			     test    ax, 8000h
+    623	050B  74 05			     jz	     is_brick
+    624	050D  59			     pop     cx
+    625	050E  B9 0920			     mov     cx, 0920h
+    626	0511  51			     push    cx
+    627	0512			     is_brick:
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 12
+MYARCANO.asm
+
+
+
+    628	0512  33 DB			     xor     bx, bx
+    629	0514  8A D4			     mov     dl, ah
+    630	0516  8A F0			     mov     dh, al
+    631	0518  B4 02			     mov     ah, 2h
+    632	051A  CD 10			     int     10h
+    633	051C  58			     pop     ax
+    634	051D  B9 0004			     mov     cx, 4
+    635	0520  B3 06			     mov     bl, 6
+    636	0522  CD 10			     int     10h
+    637	0524			     no_brick:
+    638	0524  5B			     pop     bx
+    639	0525  59			     pop     cx
+    640	0526  E2 CD			     loop    print_field_loop
+    641	0528  5A			     pop     dx
+    642	0529  5B			     pop     bx
+    643	052A  59			     pop     cx
+    644	052B  58			     pop     ax
+    645	052C  C3			     ret
+    646	052D			     print_field     endp
+    647
+    648	052D			     print   proc
+    649	052D  50			     push    ax
+    650	052E  B8 0900			     mov     ax, 0900h
+    651	0531  CD 21			     int     21h
+    652	0533  58			     pop     ax
+    653	0534  C3			     ret
+    654	0535			     print   endp
+    655
+    656				     ; --- data	--- ;
+    657	0535  57 65 6C 63 6F 6D	65+  welcome_msg     db	'Welcome to the	arcanoid game!!!'
+    658	      20 74 6F 20 74 68	65+
+    659	      20 61 72 63 61 6E	6F+
+    660	      69 64 20 67 61 6D	65+
+    661	      21 21 21
+    662	0554  0A 0D				     db	0ah, 0dh
+    663	0556  4D 61 64 65 20 62	79+		     db	'Made by Khadiev Edem 21SE-2'
+    664	      20 4B 68 61 64 69	65+
+    665	      76 20 45 64 65 6D	20+
+    666	      32 31 53 45 2D 32
+    667	0571  0A 0D				     db	0ah, 0dh
+    668	0573  50 72 65 73 73 20	61+		     db	'Press any key to start	the game...', '$'
+    669	      6E 79 20 6B 65 79	20+
+    670	      74 6F 20 73 74 61	72+
+    671	      74 20 74 68 65 20	67+
+    672	      61 6D 65 2E 2E 2E	24
+    673				     ;
+    674	0596  0A 0D 0A 0D	     end_msg	     db	0ah, 0dh, 0ah, 0dh
+    675	059A  23 23 23 23 23 23	23+		     db	'###########################', 0ah, 0dh
+    676	      23 23 23 23 23 23	23+
+    677	      23 23 23 23 23 23	23+
+    678	      23 23 23 23 23 23	0A+
+    679	      0D
+    680	05B7  23 20 54 68 61 6E	6B+		     db	'# Thanks for the game !!! #', 0ah, 0dh
+    681	      73 20 66 6F 72 20	74+
+    682	      68 65 20 67 61 6D	65+
+    683	      20 21 21 21 20 23	0A+
+    684	      0D
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 13
+MYARCANO.asm
+
+
+
+    685	05D4  23 23 23 23 23 23	23+		     db	'###########################', '$'
+    686	      23 23 23 23 23 23	23+
+    687	      23 23 23 23 23 23	23+
+    688	      23 23 23 23 23 23	24
+    689				     ;
+    690	05F0  0A 0D 23 23 23 23	23+  lose_msg	     db	0ah, 0dh, '########## GAME OVER!!! ##########',	'$'
+    691	      23 23 23 23 23 20	47+
+    692	      41 4D 45 20 4F 56	45+
+    693	      52 21 21 21 20 23	23+
+    694	      23 23 23 23 23 23	23+
+    695	      23 24
+    696				     ;
+    697	0615  25		     platform_x	     db	37
+    698	0616  0000		     game_score	     dw	0
+    699	0618  0000		     wait_time	     dw	0
+    700
+    701	061A  00		     lose	     db	0
+    702	061B  00		     next_gen	     db	0 ; if 1 then need to generate bricks
+    703
+    704	061C  0180*(FFFF)	     bricks	     dw	384  dup(-1)
+    705
+    706	*91C			     ball    struc
+    707	*000  01*(00)		     x		     db	0
+    708	*001  01*(00)		     y		     db	0
+    709	*002  01*(01)		     dir	     db	1		     ; -1 -> left dir, 1 -> rught dir.
+    710	*003  01*(01)		     angle	     db	1
+    711	*004			     ball    ends
+    712
+    713	091C  02*(??) 01 2D	     myball  ball    <?, ?, 1, 45>
+    714	      =000A		     platform_len    equ 10
+    715	0920  00		     gen_checker     db	0
+    716
+    717	      =004B		     ARROW_LEFT	     equ     4bh
+    718	      =004D		     ARROW_RIGHT     equ     4dh
+    719	      =0001		     ESCAPE	     equ     1
+    720
+    721	0921  ????????		     old_int_09h     dd	     ?
+    722
+    723				     end     start
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 14
+Symbol Table
+
+
+
+
+Symbol Name			  Type	 Value
+
+??DATE				  Text	 "03/25/22"
+??FILENAME			  Text	 "MYARCANO"
+??TIME				  Text	 "21:23:42"
+??VERSION			  Number 030A
+@32BIT				  Text	 0
+@CODE				  Text	 DGROUP
+@CODESIZE			  Text	 0
+@CPU				  Text	 0101H
+@CURSEG				  Text	 _TEXT
+@DATA				  Text	 DGROUP
+@DATASIZE			  Text	 0
+@FILENAME			  Text	 MYARCANO
+@INTERFACE			  Text	 00H
+@MODEL				  Text	 1
+@STACK				  Text	 DGROUP
+@WORDSIZE			  Text	 2
+ARROW_LEFT			  Number 004B
+ARROW_RIGHT			  Number 004D
+BRICKS				  Word	 DGROUP:061C
+BRICK_CHECK			  Near	 DGROUP:033B
+CHANGE_BALL_DIR			  Near	 DGROUP:03AD
+CHANGE_DIR			  Near	 DGROUP:0336
+CHECK_BRICKS_EXIST		  Near	 DGROUP:04B6
+CHECK_EXIST_LOOP		  Near	 DGROUP:04BE
+CHECK_VERT			  Near	 DGROUP:0319
+CLEAN_BALL			  Near	 DGROUP:01FC
+CLEAN_PLATFORM_LINE		  Near	 DGROUP:01BC
+CONT_B				  Near	 DGROUP:030E
+CONT_EXIST_LOOP			  Near	 DGROUP:04D3
+ELEMENTS_EXIST			  Near	 DGROUP:0137
+END_BRICK_CHECK			  Near	 DGROUP:03A9
+END_CHANGE_DIR			  Near	 DGROUP:03E2
+END_LOSE_CHECK			  Near	 DGROUP:02FB
+END_MSG				  Byte	 DGROUP:0596
+END_READ			  Near	 DGROUP:01B9
+END_WALL_CHECK			  Near	 DGROUP:0339
+ESCAPE				  Number 0001
+EXIT_EXIST_LOOP			  Near	 DGROUP:04D5
+GAME_LOOP			  Near	 DGROUP:0129
+GAME_OVER			  Near	 DGROUP:0160
+GAME_SCORE			  Word	 DGROUP:0616
+GEN_BALL			  Near	 DGROUP:0404
+GEN_CHECKER			  Byte	 DGROUP:0920
+GEN_FIELD			  Near	 DGROUP:043D
+GEN_LOOP			  Near	 DGROUP:0445
+HOR_WALL			  Near	 DGROUP:03DA
+IS_BRICK			  Near	 DGROUP:0512
+LOSE				  Byte	 DGROUP:061A
+LOSE_CHECK			  Near	 DGROUP:02D7
+LOSE_MSG			  Byte	 DGROUP:05F0
+MOVE_BALL			  Near	 DGROUP:02B8
+MYBALL				  Struct DGROUP:091C BALL
+NEG_DIE				  Near	 DGROUP:0435
+NEXT_GEN			  Byte	 DGROUP:061B
+Turbo Assembler	 Version 3.1	    03/25/22 21:23:43	    Page 15
+Symbol Table
+
+
+
+NO_BRICK			  Near	 DGROUP:0524
+NO_DATA				  Near	 DGROUP:0498
+NO_LEFT_PRESS			  Near	 DGROUP:01A5
+NO_NEED_BRICKS			  Near	 DGROUP:04E0
+OFFSET_FIELD			  Near	 DGROUP:0465
+OFFSET_L1			  Near	 DGROUP:046C
+OFFSET_L2			  Near	 DGROUP:0472
+OLD_INT_09H			  Dword	 DGROUP:0921
+OTHER_KEY_PRESS			  Near	 DGROUP:018F
+PLATFORM_LEN			  Number 000A
+PLATFORM_X			  Byte	 DGROUP:0615
+POS_ANGLE			  Near	 DGROUP:0426
+PRINT				  Near	 DGROUP:052D
+PRINT_BALL			  Near	 DGROUP:021F
+PRINT_FIELD			  Near	 DGROUP:04E4
+PRINT_FIELD_LOOP		  Near	 DGROUP:04F5
+PRINT_PLATFORM			  Near	 DGROUP:01DA
+PRINT_WALLS			  Near	 DGROUP:0242
+READ_CHARACTER			  Near	 DGROUP:0170
+RIGHT_CHECK			  Near	 DGROUP:02E8
+START				  Near	 DGROUP:0100
+STOP_GAME			  Near	 DGROUP:03E4
+VERT_WALL			  Near	 DGROUP:03CA
+WAIT_TIME			  Word	 DGROUP:0618
+WALL_CHECK			  Near	 DGROUP:02FD
+WALL_LOOP			  Near	 DGROUP:025D
+WELCOME_MSG			  Byte	 DGROUP:0535
+_ANGLE				  Near	 DGROUP:041D
+_COORDS				  Near	 DGROUP:0407
+_DIR				  Near	 DGROUP:042A
+_LOSE				  Near	 DGROUP:02F2
+
+Structure Name			  Type	Offset
+
+BALL
+ X				  Byte	 0000
+ Y				  Byte	 0001
+ DIR				  Byte	 0002
+ ANGLE				  Byte	 0003
+
+Groups & Segments		  Bit Size Align  Combine Class
+
+DGROUP				  Group
+  _DATA				  16  0000 Word	  Public  DATA
+  _TEXT				  16  0925 Word	  Public  CODE
+
