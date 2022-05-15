@@ -1,0 +1,8 @@
+# igonre TASM/....exe files
+*.exe
+*.bat
+# ignore compiled files
+ARCANOID.LST
+ARCANOID.COM
+ARCANOID.OBJ
+
